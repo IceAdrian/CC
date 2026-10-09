@@ -11,8 +11,8 @@ export default {
       method: request.method,
       headers: {
         "User-Agent": request.headers.get("User-Agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Host": "https://www.21.com",
-        "Referer": "21.com"
+        "Host": "www.21.com",
+        "Referer": "https://www.21.com/"
       }
     });
 
