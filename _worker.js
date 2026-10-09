@@ -24,7 +24,7 @@ export default {
         .on('img[src*="logo.svg"]', {
           element(e) {
             // Ersetze diese URL mit dem Link zu deinem eigenen Logo
-            e.setAttribute("src", "https://DEINE-DOMAIN.com/DEIN-NEUES-LOGO.png");
+            e.setAttribute("src", "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR_p7BcZiMjgEsdQjCx497ltAz3VJIqsK-yhYrLUxWA7w&s=10");
             e.setAttribute("srcset", ""); // Deaktiviert alternative Bildquellen
           }
         })
