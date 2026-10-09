@@ -8,15 +8,15 @@ export default {
     // =========================================================================
     const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
     
-    const newLogoUrl = "https://images.law.com/brightspot/07/9a/9f50cbdc4a4eaa523a73b70a4814/flank-logo-1-767x633.jpg"; 
-    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-99fb820d-11f1-4174-b616-0d358ce6e8ad.jpg"; 
+    const newLogoUrl = "https://cdn.phototourl.com/member/2026-10-09-b0c35b9f-ef8e-40e3-b05a-96feb7810599.png"; 
+    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-b0c35b9f-ef8e-40e3-b05a-96feb7810599.png"; 
 
-    const customTabTitle = "IceCasino - Bestes online Casino inkl. Sportwetten"; 
+    const customTabTitle = "1bet - Bestes online Casino inkl. Sportwetten"; 
 
     const textReplacements = {
-      "21.com": "IceCasino",
-      "21": "Ice",
-      "21-Casino": "IceCasino"
+      "21.com": "11bet",
+      "21": "11bet",
+      "21-Casino": "11bet"
     };
     // =========================================================================
 
