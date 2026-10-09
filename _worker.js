@@ -70,28 +70,16 @@ export default {
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
     proxyHeaders.set("Referer", "https://www.21.com/");
-    
-    // NEU: Origin mitsenden (Casino blockt Login sonst oft)
-    if (request.headers.get("Origin")) {
-      proxyHeaders.set("Origin", "https://www.21.com");
-    }
 
-    // NEU: Fetch-Optionen inkl. Body (Deine Login-Daten müssen mit!)
-    const fetchOptions = {
+    const response = await fetch(fetchUrl, {
       method: request.method,
       headers: proxyHeaders
-    };
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      fetchOptions.body = request.body;
-    }
+    });
 
-    const response = await fetch(fetchUrl, fetchOptions);
     const contentType = response.headers.get("content-type") || "";
 
-    // DEIN ORIGINAL HTML-REWRITER BLEIBT UNANGETASTET!
-    let finalResponse;
     if (contentType.includes("text/html")) {
-      finalResponse = new HTMLRewriter()
+      let newResponse = new HTMLRewriter()
         .on("head", {
           element(el) {
             el.append(`
@@ -108,6 +96,7 @@ export default {
                   const newFavicon = "${customFaviconUrl}";
                   const replacements = ${JSON.stringify(textReplacements)};
 
+                  // Blockiert Reacts interne Versuche, den Titel zu überschreiben
                   if (newTitle) {
                     document.title = newTitle;
                     try {
@@ -157,6 +146,7 @@ export default {
                     enforceFavicon();
                     replaceTextNodes(document.body);
 
+                    // Neuer Wächter speziell für den HTML-Kopf (Titel & Favicon)
                     const headObserver = new MutationObserver(() => {
                       if (newTitle) {
                         const titleTag = document.querySelector("title");
@@ -170,6 +160,7 @@ export default {
                       headObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
                     }
 
+                    // Wächter für die Texte auf der Seite
                     const bodyObserver = new MutationObserver((mutations) => {
                       mutations.forEach((mutation) => {
                         mutation.addedNodes.forEach((node) => replaceTextNodes(node));
@@ -179,6 +170,7 @@ export default {
                       bodyObserver.observe(document.body, { childList: true, subtree: true });
                     }
 
+                    // Affiliate Parameter vererben
                     if (affId && trkId) {
                       document.addEventListener("click", function(e) {
                         const a = e.target.closest("a");
@@ -201,32 +193,22 @@ export default {
           }
         })
         .transform(response);
-    } else {
-      finalResponse = response;
-    }
 
-    const headers = new Headers(finalResponse.headers);
-
-    // NEU: Session-Cookie Domain-Zwang entfernen, sonst speichert der Browser dein Login nicht!
-    const rawCookies = response.headers.getSetCookie ? response.headers.getSetCookie() : [];
-    if (rawCookies.length > 0) {
-      headers.delete("Set-Cookie");
-      for (let cookie of rawCookies) {
-        headers.append("Set-Cookie", cookie.replace(/Domain=[^;]+;?/gi, ''));
+      const headers = new Headers(newResponse.headers);
+      if (trackerId) {
+        headers.append("Set-Cookie", `aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
       }
+      if (affiliateId) {
+        headers.append("Set-Cookie", `aff_affiliateId=${affiliateId}; Path=/; Max-Age=2592000; SameSite=Lax`);
+      }
+
+      return new Response(newResponse.body, {
+        status: newResponse.status,
+        statusText: newResponse.statusText,
+        headers: headers
+      });
     }
 
-    if (trackerId) {
-      headers.append("Set-Cookie", `aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
-    }
-    if (affiliateId) {
-      headers.append("Set-Cookie", `aff_affiliateId=${affiliateId}; Path=/; Max-Age=2592000; SameSite=Lax`);
-    }
-
-    return new Response(finalResponse.body, {
-      status: finalResponse.status,
-      statusText: finalResponse.statusText,
-      headers: headers
-    });
+    return response;
   }
 };
