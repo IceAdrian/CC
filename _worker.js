@@ -4,19 +4,15 @@ export default {
     const targetBase = "https://www.21.com";
 
     // =========================================================================
-    // 1. KONFIGURATION (Hier alle deine Anpassungen eintragen)
+    // 1. KONFIGURATION
     // =========================================================================
     const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
     
-    // Links zu deinen Bildern
     const newLogoUrl = "https://images.law.com/brightspot/07/9a/9f50cbdc4a4eaa523a73b70a4814/flank-logo-1-767x633.jpg"; 
-    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-99fb820d-11f1-4174-b616-0d358ce6e8ad.jpg"; // Kleines Icon im Browser-Tab
+    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-99fb820d-11f1-4174-b616-0d358ce6e8ad.jpg"; 
 
-    // Seitentitel im Browser-Tab
     const customTabTitle = "IceCasino - Bestes online Casino inkl. Sportwetten"; 
 
-    // Begriffe auf der Seite suchen und ersetzen
-    // Format: "Original-Wort auf der Seite": "Dein neues Wunsch-Wort"
     const textReplacements = {
       "21.com": "IceCasino",
       "21": "Ice",
@@ -24,7 +20,6 @@ export default {
     };
     // =========================================================================
 
-    // Statische Dateien (Bilder, CSS, JS, Fonts) direkt durchlassen
     const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico|json)$/i);
     if (isStaticFile) {
       const fetchUrl = new URL(url.pathname + url.search, targetBase);
@@ -33,7 +28,6 @@ export default {
       });
     }
 
-    // Cookies auslesen (Cookie-Gedächtnis)
     const cookieHeader = request.headers.get("Cookie") || "";
     const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
       const [k, v] = c.trim().split('=');
@@ -43,7 +37,6 @@ export default {
     let affiliateId = url.searchParams.get("affiliateId") || cookies["aff_affiliateId"];
     let trackerId = url.searchParams.get("trackerId") || cookies["aff_trackerId"];
 
-    // Einmalig Tracking-ID vom Tracker abholen, falls noch nicht vorhanden
     if (!trackerId) {
       try {
         const trackerResponse = await fetch(affiliateTrackerUrl, {
@@ -67,14 +60,12 @@ export default {
       }
     }
 
-    // Parameter an URL anhängen, falls sie noch nicht vorhanden sind
     if (trackerId && !url.searchParams.has("trackerId")) {
       url.searchParams.set("trackerId", trackerId);
       if (affiliateId) url.searchParams.set("affiliateId", affiliateId);
       return Response.redirect(url.toString(), 302);
     }
 
-    // Casino-Seite abrufen
     const fetchUrl = new URL(url.pathname + url.search, targetBase);
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
@@ -87,14 +78,12 @@ export default {
 
     const contentType = response.headers.get("content-type") || "";
 
-    // HTML bearbeiten (Logo, Favicon, Title, Worte ersetzen)
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
         .on("head", {
           element(el) {
             el.append(`
               <style>
-                /* Logo dauerhaft ersetzen */
                 img[src*="logo"], img[alt*="21.com"], img[aria-label*="21.com"] {
                   content: url("${newLogoUrl}") !important;
                 }
@@ -107,7 +96,32 @@ export default {
                   const newFavicon = "${customFaviconUrl}";
                   const replacements = ${JSON.stringify(textReplacements)};
 
-                  // Funktion zum Ersetzen von Texten in allen Elementen
+                  // Blockiert Reacts interne Versuche, den Titel zu überschreiben
+                  if (newTitle) {
+                    document.title = newTitle;
+                    try {
+                      Object.defineProperty(document, 'title', {
+                        get: function() { return newTitle; },
+                        set: function() { /* Ignorieren */ }
+                      });
+                    } catch(e) {}
+                  }
+
+                  function enforceFavicon() {
+                    if (!newFavicon) return;
+                    let icons = document.querySelectorAll("link[rel*='icon'], link[rel='shortcut icon']");
+                    if (icons.length === 0) {
+                      let link = document.createElement('link');
+                      link.rel = 'icon';
+                      link.href = newFavicon;
+                      document.head.appendChild(link);
+                    } else {
+                      icons.forEach(icon => {
+                        if (icon.href !== newFavicon) icon.href = newFavicon;
+                      });
+                    }
+                  }
+
                   function replaceTextNodes(node) {
                     if (node.nodeType === Node.TEXT_NODE) {
                       let val = node.nodeValue;
@@ -129,30 +143,34 @@ export default {
                   }
 
                   document.addEventListener("DOMContentLoaded", function() {
-                    // 1. Tab-Titel anpassen
-                    if (newTitle) document.title = newTitle;
-
-                    // 2. Favicon (kleines Icon im Tab) anpassen
-                    if (newFavicon) {
-                      let link = document.querySelector("link[rel*='icon']") || document.createElement('link');
-                      link.type = 'image/x-icon';
-                      link.rel = 'shortcut icon';
-                      link.href = newFavicon;
-                      document.getElementsByTagName('head')[0].appendChild(link);
-                    }
-
-                    // 3. Texte beim ersten Laden ersetzen
+                    enforceFavicon();
                     replaceTextNodes(document.body);
 
-                    // 4. Texte auch bei dynamisch nachgeladenen Inhalten (React) ersetzen
-                    const observer = new MutationObserver((mutations) => {
+                    // Neuer Wächter speziell für den HTML-Kopf (Titel & Favicon)
+                    const headObserver = new MutationObserver(() => {
+                      if (newTitle) {
+                        const titleTag = document.querySelector("title");
+                        if (titleTag && titleTag.innerText !== newTitle) {
+                          titleTag.innerText = newTitle;
+                        }
+                      }
+                      enforceFavicon();
+                    });
+                    if (document.head) {
+                      headObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
+                    }
+
+                    // Wächter für die Texte auf der Seite
+                    const bodyObserver = new MutationObserver((mutations) => {
                       mutations.forEach((mutation) => {
                         mutation.addedNodes.forEach((node) => replaceTextNodes(node));
                       });
                     });
-                    observer.observe(document.body, { childList: true, subtree: true });
+                    if (document.body) {
+                      bodyObserver.observe(document.body, { childList: true, subtree: true });
+                    }
 
-                    // 5. Affiliate-Parameter bei Klicks weitergeben
+                    // Affiliate Parameter vererben
                     if (affId && trkId) {
                       document.addEventListener("click", function(e) {
                         const a = e.target.closest("a");
@@ -176,7 +194,6 @@ export default {
         })
         .transform(response);
 
-      // Cookies setzen
       const headers = new Headers(newResponse.headers);
       if (trackerId) {
         headers.append("Set-Cookie", `aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
