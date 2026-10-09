@@ -20,8 +20,8 @@ export default {
     };
     // =========================================================================
 
-    // Nur reine Medien-Dateien direkt durchleiten
-    const isStaticMedia = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|woff|woff2|ttf|eot|ico)$/i);
+    // Nur rein statische Medien direkt durchleiten (.js entfernt, damit wir es umschreiben können)
+    const isStaticMedia = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|woff|woff2|ttf|eot|ico|json)$/i);
     if (isStaticMedia) {
       const fetchUrl = new URL(url.pathname + url.search, targetBase);
       return fetch(fetchUrl, {
@@ -29,6 +29,7 @@ export default {
       });
     }
 
+    // Cookie & Affiliate Tracking
     const cookieHeader = request.headers.get("Cookie") || "";
     const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
       const [k, v] = c.trim().split('=');
@@ -67,6 +68,7 @@ export default {
       return Response.redirect(url.toString(), 302);
     }
 
+    // Request-Headers für den Proxy anpassen
     const fetchUrl = new URL(url.pathname + url.search, targetBase);
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
@@ -83,28 +85,23 @@ export default {
 
     if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method.toUpperCase())) {
       fetchOptions.body = request.body;
-      fetchOptions.duplex = "half";
     }
 
     const response = await fetch(fetchUrl, fetchOptions);
 
+    // Response Headers bereinigen
     const newHeaders = new Headers(response.headers);
 
-    // 1. Cookies an die eigene Domain anpassen
+    // 1. Set-Cookie Domain entfernen, damit Cookies auf deiner Domain gespeichert werden
     const rawCookies = response.headers.getSetCookie ? response.headers.getSetCookie() : [];
     if (rawCookies.length > 0) {
       newHeaders.delete("Set-Cookie");
       for (let cookie of rawCookies) {
         newHeaders.append("Set-Cookie", cookie.replace(/Domain=[^;]+;?/gi, ''));
       }
-    } else {
-      const singleCookie = response.headers.get("Set-Cookie");
-      if (singleCookie) {
-        newHeaders.set("Set-Cookie", singleCookie.replace(/Domain=[^;]+;?/gi, ''));
-      }
     }
 
-    // 2. HTTP-Redirects abfangen und auf die eigene Domain umbiegen
+    // 2. Server-Seitige Umleitungen auf deine Domain umschreiben
     const location = newHeaders.get("Location");
     if (location) {
       const rewrittenLocation = location.replace(/https?:\/\/(www\.)?21\.com/gi, url.origin);
@@ -120,62 +117,72 @@ export default {
 
     const contentType = response.headers.get("content-type") || "";
 
-    // 3. JSON & API-ANTWORTEN ANPASSEN (Verhindert, dass API-Antworten die originale URL zurückgeben)
-    if (contentType.includes("application/json") || contentType.includes("text/plain")) {
-      let text = await response.text();
-      text = text.replace(/https?:\/\/(www\.)?21\.com/gi, url.origin);
-      return new Response(text, {
+    // 3. JavaScript-Dateien abfangen und URLs durch deine Domain ersetzen
+    if (contentType.includes("javascript") || url.pathname.endsWith(".js")) {
+      let jsText = await response.text();
+      jsText = jsText.replace(/https?:\/\/(www\.)?21\.com/gi, url.origin);
+      jsText = jsText.replace(/https?:\\\/\\\/www\.21\.com/gi, url.origin.replace(/\//g, '\\/'));
+      return new Response(jsText, {
         status: response.status,
         statusText: response.statusText,
         headers: newHeaders
       });
     }
 
-    // 4. HTML-ANTWORTEN ANPASSEN (Inklusive Client-Side Interceptor Script)
+    // 4. HTML-Transformation mit Client-Seitigem Interceptor
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
         .on("head", {
           element(el) {
-            // Mit prepend wird das Script ganz oben eingefügt, NOCH BEVOR das Casino-Script startet
             el.prepend(`
               <script>
+                // CLIENT-SIDE INTERCEPTOR: Verhindert, dass JS im Browser direkt auf 21.com zugreift
                 (function() {
-                  const MY_ORIGIN = window.location.origin;
-                  const TARGET_REGEX = /https?:\\/\\/(www\\.)?21\\.com/gi;
+                  const myOrigin = window.location.origin;
+                  const targetRegex = /https?:\\/\\/(www\\.)?21\\.com/gi;
 
-                  // A) Abfangen von clientseitigen fetch-Aufrufen
+                  // Intercept fetch API
                   const origFetch = window.fetch;
                   window.fetch = function(input, init) {
                     if (typeof input === 'string') {
-                      input = input.replace(TARGET_REGEX, MY_ORIGIN);
+                      input = input.replace(targetRegex, myOrigin);
                     } else if (input && input.url) {
-                      const newUrl = input.url.replace(TARGET_REGEX, MY_ORIGIN);
+                      const newUrl = input.url.replace(targetRegex, myOrigin);
                       input = new Request(newUrl, input);
                     }
                     return origFetch.call(this, input, init);
                   };
 
-                  // B) Abfangen von XMLHttpRequest (XHR)
+                  // Intercept XMLHttpRequest (AJAX)
                   const origOpen = XMLHttpRequest.prototype.open;
                   XMLHttpRequest.prototype.open = function(method, url, ...args) {
                     if (typeof url === 'string') {
-                      url = url.replace(TARGET_REGEX, MY_ORIGIN);
+                      url = url.replace(targetRegex, myOrigin);
                     }
                     return origOpen.call(this, method, url, ...args);
                   };
 
-                  // C) Abfangen von JS-Umleitungen (window.location.assign / replace)
-                  const origAssign = window.location.assign.bind(window.location);
-                  window.location.assign = function(url) {
-                    origAssign(typeof url === 'string' ? url.replace(TARGET_REGEX, MY_ORIGIN) : url);
+                  // Intercept SPA Routing (pushState / replaceState)
+                  const origPush = history.pushState;
+                  history.pushState = function(state, title, url) {
+                    if (url && typeof url === 'string') {
+                      url = url.replace(targetRegex, myOrigin);
+                    }
+                    return origPush.call(this, state, title, url);
                   };
 
-                  const origReplace = window.location.replace.bind(window.location);
-                  window.location.replace = function(url) {
-                    origReplace(typeof url === 'string' ? url.replace(TARGET_REGEX, MY_ORIGIN) : url);
+                  const origReplace = history.replaceState;
+                  history.replaceState = function(state, title, url) {
+                    if (url && typeof url === 'string') {
+                      url = url.replace(targetRegex, myOrigin);
+                    }
+                    return origReplace.call(this, state, title, url);
                   };
                 })();
               </script>
+            `, { html: true });
+
+            el.append(`
               <style>
                 img[src*="logo"], img[alt*="21.com"], img[aria-label*="21.com"] {
                   content: url("${newLogoUrl}") !important;
