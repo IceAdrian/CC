@@ -1,16 +1,16 @@
 export default {
   async fetch(request) {
-    // Hier deinen kompletten Affiliate-Link eintragen
-    const targetBase = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
+    // Direkte Zielseite der Casino-Website nutzen (nicht den Tracking-Link)
+    const targetBase = "https://www.21.com";
     
     const url = new URL(request.url);
     const fetchUrl = new URL(url.pathname + url.search, targetBase);
 
-    // Anfrage an das Casino schicken
+    // Anfrage an das Casino mit echten Browser-Headern schicken
     const response = await fetch(fetchUrl, {
       method: request.method,
       headers: {
-        "User-Agent": request.headers.get("User-Agent") || "",
+        "User-Agent": request.headers.get("User-Agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Host": "www.21.com",
         "Referer": "https://www.21.com/"
       }
@@ -18,19 +18,19 @@ export default {
 
     const contentType = response.headers.get("content-type") || "";
     
-    // Wenn das Casino HTML-Code ausliefert, tauschen wir Inhalte aus
+    // Wenn HTML geliefert wird, tauschen wir das Logo aus
     if (contentType.includes("text/html")) {
       return new HTMLRewriter()
-        .on("img", {
+        .on('img[src*="logo.svg"]', {
           element(e) {
-            // Sobald du weißt, wie die Klasse des 21.com Logos heißt, kannst du hier die Bild-URL ersetzen
-            // e.setAttribute("src", "https://deine-seite.com/neues-logo.png");
+            // Ersetze diese URL mit dem Link zu deinem eigenen Logo
+            e.setAttribute("src", "https://images.law.com/brightspot/07/9a/9f50cbdc4a4eaa523a73b70a4814/flank-logo-1-767x633.jpg");
+            e.setAttribute("srcset", ""); // Deaktiviert alternative Bildquellen
           }
         })
         .transform(response);
     }
     
-    // Alle anderen Dateien (CSS, Bilder) normal durchlassen
     return response;
   }
 };
