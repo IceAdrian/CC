@@ -12,7 +12,7 @@ export default {
       headers: {
         "User-Agent": request.headers.get("User-Agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Host": "www.21.com",
-        "Referer": "https://www.21.com/"
+        "Referer": "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ"
       }
     });
 
