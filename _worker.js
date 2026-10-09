@@ -8,10 +8,10 @@ export default {
     // =========================================================================
     const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
     
-    const newLogoUrl = "https://cdn.phototourl.com/member/2026-10-09-b0c35b9f-ef8e-40e3-b05a-96feb7810599.png"; 
-    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-b0c35b9f-ef8e-40e3-b05a-96feb7810599.png"; 
+    const newLogoUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
+    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
 
-    const customTabTitle = "1bet - Bestes online Casino inkl. Sportwetten"; 
+    const customTabTitle = "11bet - Bestes online Casino inkl. Sportwetten"; 
 
     const textReplacements = {
       "21.com": "11bet",
