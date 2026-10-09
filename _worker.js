@@ -4,7 +4,7 @@ export default {
     
     // Deinen Tracking-Link und dein Logo eintragen
     const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
-    const newLogoUrl = "https://DEINE-DOMAIN.com/DEIN-NEUES-LOGO.png"; 
+    const newLogoUrl = "https://images.law.com/brightspot/07/9a/9f50cbdc4a4eaa523a73b70a4814/flank-logo-1-767x633.jpg"; 
     const targetBase = "https://www.21.com";
 
     // 1. Statische Dateien (Bilder, CSS, JS) direkt durchlassen
