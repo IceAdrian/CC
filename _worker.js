@@ -1,7 +1,7 @@
 export default {
   async fetch(request) {
     // Direkte Zielseite der Casino-Website nutzen (nicht den Tracking-Link)
-    const targetBase = "21.com";
+    const targetBase = "https://www.21.com;
     
     const url = new URL(request.url);
     const fetchUrl = new URL(url.pathname + url.search, targetBase);
