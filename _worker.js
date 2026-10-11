@@ -1,52 +1,34 @@
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const targetBase = "https://www.21.com";
+    const targetBase = "https://coins.game";
 
     // =========================================================================
-    // KONFIGURATION
+    // KONFIGURATION (Coins.game)
     // =========================================================================
-    const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
+    const affiliateInitUrl = "https://coins.game/c/2957023_cb861072";
     
+    // Passe hier deine eigenen Branding-Daten an:
     const newLogoUrl = "https://DEINE-DOMAIN.com/DEIN-NEUES-LOGO.png"; 
     const customFaviconUrl = "https://DEINE-DOMAIN.com/DEIN-FAVICON.png"; 
-
-    const customTabTitle = "dein Casino - Exklusiver Bonus"; 
+    const customTabTitle = "Coins.game - Krypto Casino & Bonus"; 
 
     const textReplacements = {
-      "21.com": "MeinCasino",
-      "Willkommensbonus": "Exklusiver 200% Bonus",
-      "Registrieren": "Konto erstellen"
+      "Coins.game": "MeinCasino",
+      "Sign Up": "Registrieren",
+      "Log In": "Anmelden"
     };
     // =========================================================================
 
-    // 0. OPTIONS-Anfragen (CORS Preflight) direkt beantworten
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "*"
-        }
-      });
-    }
-
-    // 1. Cookies auslesen
+    // 1. Prüfen, ob der Nutzer bereits das Affiliate-Tracking initialisiert hat (via Cookie)
     const cookieHeader = request.headers.get("Cookie") || "";
-    const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
-      const [k, v] = c.trim().split('=');
-      return [k, v];
-    }));
+    const hasTracked = cookieHeader.includes("coins_tracked=1");
+    let extraCookiesToSet = [];
 
-    let trackerId = cookies["aff_trackerId"];
-    let affiliateId = cookies["aff_affiliateId"];
-    let setCookiesToSave = [];
-
-    // 2. Tracking-ID einmalig abrufen, falls noch nicht vorhanden
-    if (!trackerId) {
+    if (!hasTracked) {
       try {
-        const trackerResponse = await fetch(affiliateTrackerUrl, {
+        // Wir besuchen im Hintergrund deinen Affiliate-Link, damit Coins.game den Tracking-Cookie setzt
+        const initResponse = await fetch(affiliateInitUrl, {
           method: "GET",
           headers: {
             "User-Agent": request.headers.get("User-Agent") || "",
@@ -56,34 +38,30 @@ export default {
           redirect: "manual"
         });
 
-        const locationHeader = trackerResponse.headers.get("Location");
-        if (locationHeader) {
-          const redirectTarget = new URL(locationHeader);
-          affiliateId = redirectTarget.searchParams.get("affiliateId");
-          trackerId = redirectTarget.searchParams.get("trackerId");
-
-          if (trackerId) {
-            setCookiesToSave.push(`aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
-          }
-          if (affiliateId) {
-            setCookiesToSave.push(`aff_affiliateId=${affiliateId}; Path=/; Max-Age=2592000; SameSite=Lax`);
-          }
+        // Wir sammeln alle Cookies, die Coins.game für das Affiliate-Tracking vergibt
+        const setCookieHeaders = initResponse.headers.get("set-cookie");
+        if (setCookieHeaders) {
+          // Cookies für den Nutzer übernehmen
+          extraCookiesToSet.push(setCookieHeaders);
         }
+        // Unser eigener Marker, damit das nicht bei jedem Klick neu gemacht werden muss
+        extraCookiesToSet.push("coins_tracked=1; Path=/; Max-Age=2592000; SameSite=Lax");
       } catch (e) {}
     }
 
-    // 3. Ziel-URL für das Casino aufbauen
+    // 2. Ziel-URL für den Proxy aufbauen
     const targetUrl = new URL(url.pathname + url.search, targetBase);
-    if (trackerId && !targetUrl.searchParams.has("trackerId")) {
-      targetUrl.searchParams.set("trackerId", trackerId);
-      if (affiliateId) targetUrl.searchParams.set("affiliateId", affiliateId);
-    }
 
-    // 4. Proxy-Header vorbereiten
+    // 3. Proxy-Header für Coins.game vorbereiten
     const proxyHeaders = new Headers(request.headers);
-    proxyHeaders.set("Host", "www.21.com");
-    proxyHeaders.set("Origin", "https://www.21.com");
-    proxyHeaders.set("Referer", "https://www.21.com/");
+    proxyHeaders.set("Host", "coins.game");
+    proxyHeaders.set("Origin", "https://coins.game");
+    proxyHeaders.set("Referer", "https://coins.game/");
+
+    // Falls Tracking-Cookies vorhanden sind, geben wir sie an die Anfrage an Coins.game weiter
+    if (cookieHeader) {
+      proxyHeaders.set("Cookie", cookieHeader);
+    }
 
     const fetchOptions = {
       method: request.method,
@@ -91,7 +69,6 @@ export default {
       redirect: "follow"
     };
 
-    // Body direkt für POST/PUT übergeben
     if (request.method !== "GET" && request.method !== "HEAD") {
       fetchOptions.body = request.body;
     }
@@ -100,8 +77,7 @@ export default {
     try {
       response = await fetch(targetUrl, fetchOptions);
     } catch (err) {
-      // GARantiert valides JSON im Fehlerfall, damit das Login-Skript nicht abstürzt
-      return new Response(JSON.stringify({ error: err.message || "Proxy connection failed" }), {
+      return new Response(JSON.stringify({ error: "Proxy connection failed" }), {
         status: 500,
         headers: { "Content-Type": "application/json" }
       });
@@ -109,14 +85,15 @@ export default {
 
     const contentType = response.headers.get("content-type") || "";
 
-    // 5. HTML bearbeiten (Logo, Titel, Favicon, Texte)
+    // 4. Wenn HTML zurückkommt, Branding anpassen (Logo, Titel, Favicon, Texte)
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
         .on("head", {
           element(el) {
             el.append(`
               <style>
-                img[src*="logo"], img[alt*="21.com"], img[aria-label*="21.com"] {
+                /* Coins.game Logo-Selektoren dauerhaft überschreiben */
+                img[src*="logo"], img[alt*="Coins"], svg[class*="logo"] {
                   content: url("${newLogoUrl}") !important;
                 }
               </style>
@@ -207,7 +184,7 @@ export default {
       const finalHeaders = new Headers(newResponse.headers);
       finalHeaders.delete("Content-Security-Policy");
       
-      for (const c of setCookiesToSave) {
+      for (const c of extraCookiesToSet) {
         finalHeaders.append("Set-Cookie", c);
       }
 
@@ -218,10 +195,10 @@ export default {
       });
     }
 
-    // Für API-Antworten, JSON, Bilder, CSS, JS etc.
+    // Für API-Aufrufe, JSON, Bilder, CSS etc.
     const finalHeaders = new Headers(response.headers);
     finalHeaders.delete("Content-Security-Policy");
-    for (const c of setCookiesToSave) {
+    for (const c of extraCookiesToSet) {
       finalHeaders.append("Set-Cookie", c);
     }
 
