@@ -1,34 +1,49 @@
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const targetBase = "https://coins.game";
+    const targetBase = "https://vave.com";
 
     // =========================================================================
-    // KONFIGURATION (Coins.game)
+    // KONFIGURATION (Hier kannst du alles anpassen)
     // =========================================================================
-    const affiliateInitUrl = "https://coins.game/c/2957023_cb861072";
+    const affiliateTrackerUrl = "https://go.vavepartners.com/redirect.aspx?pid=113375&bid=1481&lpid=204";
     
-    // Passe hier deine eigenen Branding-Daten an:
     const newLogoUrl = "https://DEINE-DOMAIN.com/DEIN-NEUES-LOGO.png"; 
     const customFaviconUrl = "https://DEINE-DOMAIN.com/DEIN-FAVICON.png"; 
-    const customTabTitle = "Coins.game - Krypto Casino & Bonus"; 
 
+    const customTabTitle = "Vave - Sportwetten & Casino"; 
+
+    // Begriffe auf der Vave-Seite suchen und ersetzen
     const textReplacements = {
-      "Coins.game": "MeinCasino",
-      "Sign Up": "Registrieren",
-      "Log In": "Anmelden"
+      "Vave": "MeinCasino",
+      "Willkommensbonus": "Exklusiver Bonus",
+      "Registrieren": "Konto erstellen"
     };
     // =========================================================================
 
-    // 1. Prüfen, ob der Nutzer bereits das Affiliate-Tracking initialisiert hat (via Cookie)
-    const cookieHeader = request.headers.get("Cookie") || "";
-    const hasTracked = cookieHeader.includes("coins_tracked=1");
-    let extraCookiesToSet = [];
+    // Statische Dateien (Bilder, CSS, JS etc.) direkt durchlassen
+    const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico|json|webp)$/i);
+    if (isStaticFile) {
+      const fetchUrl = new URL(url.pathname + url.search, targetBase);
+      const proxyHeaders = new Headers(request.headers);
+      proxyHeaders.set("Host", "vave.com");
+      return fetch(fetchUrl, { headers: proxyHeaders });
+    }
 
-    if (!hasTracked) {
+    // 1. Cookies auslesen
+    const cookieHeader = request.headers.get("Cookie") || "";
+    const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
+      const [k, v] = c.trim().split('=');
+      return [k, v];
+    }));
+
+    let refParams = cookies["vave_ref"] || "";
+    let setCookiesToSave = [];
+
+    // 2. Wenn noch kein Tracking-Cookie da ist, einmalig den Affiliate-Link im Hintergrund abfragen
+    if (!refParams) {
       try {
-        // Wir besuchen im Hintergrund deinen Affiliate-Link, damit Coins.game den Tracking-Cookie setzt
-        const initResponse = await fetch(affiliateInitUrl, {
+        const trackerResponse = await fetch(affiliateTrackerUrl, {
           method: "GET",
           headers: {
             "User-Agent": request.headers.get("User-Agent") || "",
@@ -38,30 +53,33 @@ export default {
           redirect: "manual"
         });
 
-        // Wir sammeln alle Cookies, die Coins.game für das Affiliate-Tracking vergibt
-        const setCookieHeaders = initResponse.headers.get("set-cookie");
-        if (setCookieHeaders) {
-          // Cookies für den Nutzer übernehmen
-          extraCookiesToSet.push(setCookieHeaders);
+        const locationHeader = trackerResponse.headers.get("Location");
+        if (locationHeader) {
+          const redirectTarget = new URL(locationHeader);
+          refParams = redirectTarget.search; // Speichert alle Tracking-Parameter (z.B. ?pid=...)
+          
+          if (refParams) {
+            setCookiesToSave.push(`vave_ref=${encodeURIComponent(refParams)}; Path=/; Max-Age=2592000; SameSite=Lax`);
+          }
         }
-        // Unser eigener Marker, damit das nicht bei jedem Klick neu gemacht werden muss
-        extraCookiesToSet.push("coins_tracked=1; Path=/; Max-Age=2592000; SameSite=Lax");
       } catch (e) {}
     }
 
-    // 2. Ziel-URL für den Proxy aufbauen
+    // Falls Parameter im Cookie liegen, hängen wir sie an die Ziel-URL an
     const targetUrl = new URL(url.pathname + url.search, targetBase);
-
-    // 3. Proxy-Header für Coins.game vorbereiten
-    const proxyHeaders = new Headers(request.headers);
-    proxyHeaders.set("Host", "coins.game");
-    proxyHeaders.set("Origin", "https://coins.game");
-    proxyHeaders.set("Referer", "https://coins.game/");
-
-    // Falls Tracking-Cookies vorhanden sind, geben wir sie an die Anfrage an Coins.game weiter
-    if (cookieHeader) {
-      proxyHeaders.set("Cookie", cookieHeader);
+    if (refParams && !targetUrl.search) {
+      // Wenn keine eigenen Query-Parameter da sind, die Tracking-Parameter anhängen
+      const params = new URLSearchParams(refParams);
+      params.forEach((val, key) => {
+        if (!targetUrl.searchParams.has(key)) targetUrl.searchParams.set(key, val);
+      });
     }
+
+    // 3. Proxy-Anfrage an Vave senden
+    const proxyHeaders = new Headers(request.headers);
+    proxyHeaders.set("Host", "vave.com");
+    proxyHeaders.set("Origin", "https://vave.com");
+    proxyHeaders.set("Referer", "https://vave.com/");
 
     const fetchOptions = {
       method: request.method,
@@ -77,23 +95,25 @@ export default {
     try {
       response = await fetch(targetUrl, fetchOptions);
     } catch (err) {
-      return new Response(JSON.stringify({ error: "Proxy connection failed" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
+      if (request.headers.get("accept")?.includes("application/json")) {
+        return new Response(JSON.stringify({ error: "Proxy connection failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response("Proxy Error", { status: 500 });
     }
 
     const contentType = response.headers.get("content-type") || "";
 
-    // 4. Wenn HTML zurückkommt, Branding anpassen (Logo, Titel, Favicon, Texte)
+    // 4. HTML bearbeiten (Logo, Titel, Favicon, Texte)
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
         .on("head", {
           element(el) {
             el.append(`
               <style>
-                /* Coins.game Logo-Selektoren dauerhaft überschreiben */
-                img[src*="logo"], img[alt*="Coins"], svg[class*="logo"] {
+                img[src*="logo"], img[alt*="Vave"], svg[class*="logo"] {
                   content: url("${newLogoUrl}") !important;
                 }
               </style>
@@ -184,7 +204,7 @@ export default {
       const finalHeaders = new Headers(newResponse.headers);
       finalHeaders.delete("Content-Security-Policy");
       
-      for (const c of extraCookiesToSet) {
+      for (const c of setCookiesToSave) {
         finalHeaders.append("Set-Cookie", c);
       }
 
@@ -195,10 +215,10 @@ export default {
       });
     }
 
-    // Für API-Aufrufe, JSON, Bilder, CSS etc.
+    // Für API, Bilder, CSS, JS etc.
     const finalHeaders = new Headers(response.headers);
     finalHeaders.delete("Content-Security-Policy");
-    for (const c of extraCookiesToSet) {
+    for (const c of setCookiesToSave) {
       finalHeaders.append("Set-Cookie", c);
     }
 
