@@ -60,16 +60,17 @@ export default {
       } catch (e) {}
     }
 
-    // 3. Ziel-URL für das Casino aufbauen (Tracker-ID wird einmalig an den ersten Request übergeben)
+    // 3. Ziel-URL für das Casino aufbauen
     const targetUrl = new URL(url.pathname + url.search, targetBase);
     if (trackerId && !targetUrl.searchParams.has("trackerId")) {
       targetUrl.searchParams.set("trackerId", trackerId);
       if (affiliateId) targetUrl.searchParams.set("affiliateId", affiliateId);
     }
 
-    // 4. Anfrage an 21.com durchreichen (unterstützt GET und POST für Login/Registrierung)
+    // 4. Proxy-Header vorbereiten (WICHTIG: Origin und Referer auf 21.com setzen für AJAX/Login)
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.set("Host", "www.21.com");
+    proxyHeaders.set("Origin", "https://www.21.com");
     proxyHeaders.set("Referer", "https://www.21.com/");
 
     const fetchOptions = {
@@ -78,14 +79,24 @@ export default {
       redirect: "follow"
     };
 
-    if (request.method === "POST") {
-      fetchOptions.body = request.body;
+    // Für POST/PUT (Login, Registrierung, AJAX-Calls) den Body sicher klonen
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      try {
+        fetchOptions.body = request.clone().body;
+      } catch (e) {}
     }
 
     let response;
     try {
       response = await fetch(targetUrl, fetchOptions);
     } catch (err) {
+      // JSON-freundlicher Fehler falls AJAX fehlschlägt
+      if (request.headers.get("accept")?.includes("application/json")) {
+        return new Response(JSON.stringify({ error: "Proxy connection failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       return new Response("Proxy Error", { status: 500 });
     }
 
@@ -187,7 +198,7 @@ export default {
         .transform(response);
 
       const finalHeaders = new Headers(newResponse.headers);
-      finalHeaders.delete("Content-Security-Policy"); // Verhindert Blockaden durch Sicherheitsrichtlinien des Casinos
+      finalHeaders.delete("Content-Security-Policy");
       
       for (const c of setCookiesToSave) {
         finalHeaders.append("Set-Cookie", c);
@@ -200,7 +211,7 @@ export default {
       });
     }
 
-    // Für Bilder, CSS, JS etc.
+    // Für API-Antworten, JSON, Bilder, CSS, JS etc.
     const finalHeaders = new Headers(response.headers);
     finalHeaders.delete("Content-Security-Policy");
     for (const c of setCookiesToSave) {
