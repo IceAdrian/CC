@@ -1,47 +1,43 @@
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const targetBase = "https://vave.com";
+    const targetBase = "https://www.21.com";
 
     // =========================================================================
-    // KONFIGURATION (Hier kannst du alles anpassen)
+    // 1. KONFIGURATION
     // =========================================================================
-    const affiliateTrackerUrl = "https://go.vavepartners.com/redirect.aspx?pid=113375&bid=1481&lpid=204";
+    const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
     
-    const newLogoUrl = "https://DEINE-DOMAIN.com/DEIN-NEUES-LOGO.png"; 
-    const customFaviconUrl = "https://DEINE-DOMAIN.com/DEIN-FAVICON.png"; 
+    const newLogoUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
+    const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
 
-    const customTabTitle = "Vave - Sportwetten & Casino"; 
+    const customTabTitle = "11bet - Bestes online Casino inkl. Sportwetten"; 
 
-    // Begriffe auf der Vave-Seite suchen und ersetzen
     const textReplacements = {
-      "Vave": "MeinCasino",
-      "Willkommensbonus": "Exklusiver Bonus",
-      "Registrieren": "Konto erstellen"
+      "21.com": "11bet",
+      "21": "11bet",
+      "21-Casino": "11bet"
     };
     // =========================================================================
 
-    // Statische Dateien (Bilder, CSS, JS etc.) direkt durchlassen
-    const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico|json|webp)$/i);
+    const isStaticFile = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|css|js|woff|woff2|ttf|eot|ico|json)$/i);
     if (isStaticFile) {
       const fetchUrl = new URL(url.pathname + url.search, targetBase);
-      const proxyHeaders = new Headers(request.headers);
-      proxyHeaders.set("Host", "vave.com");
-      return fetch(fetchUrl, { headers: proxyHeaders });
+      return fetch(fetchUrl, {
+        headers: { "Host": "www.21.com", "User-Agent": request.headers.get("User-Agent") || "" }
+      });
     }
 
-    // 1. Cookies auslesen
     const cookieHeader = request.headers.get("Cookie") || "";
     const cookies = Object.fromEntries(cookieHeader.split(';').map(c => {
       const [k, v] = c.trim().split('=');
       return [k, v];
     }));
 
-    let refParams = cookies["vave_ref"] || "";
-    let setCookiesToSave = [];
+    let affiliateId = url.searchParams.get("affiliateId") || cookies["aff_affiliateId"];
+    let trackerId = url.searchParams.get("trackerId") || cookies["aff_trackerId"];
 
-    // 2. Wenn noch kein Tracking-Cookie da ist, einmalig den Affiliate-Link im Hintergrund abfragen
-    if (!refParams) {
+    if (!trackerId) {
       try {
         const trackerResponse = await fetch(affiliateTrackerUrl, {
           method: "GET",
@@ -56,79 +52,57 @@ export default {
         const locationHeader = trackerResponse.headers.get("Location");
         if (locationHeader) {
           const redirectTarget = new URL(locationHeader);
-          refParams = redirectTarget.search; // Speichert alle Tracking-Parameter (z.B. ?pid=...)
-          
-          if (refParams) {
-            setCookiesToSave.push(`vave_ref=${encodeURIComponent(refParams)}; Path=/; Max-Age=2592000; SameSite=Lax`);
-          }
+          affiliateId = redirectTarget.searchParams.get("affiliateId");
+          trackerId = redirectTarget.searchParams.get("trackerId");
         }
-      } catch (e) {}
-    }
-
-    // Falls Parameter im Cookie liegen, hängen wir sie an die Ziel-URL an
-    const targetUrl = new URL(url.pathname + url.search, targetBase);
-    if (refParams && !targetUrl.search) {
-      // Wenn keine eigenen Query-Parameter da sind, die Tracking-Parameter anhängen
-      const params = new URLSearchParams(refParams);
-      params.forEach((val, key) => {
-        if (!targetUrl.searchParams.has(key)) targetUrl.searchParams.set(key, val);
-      });
-    }
-
-    // 3. Proxy-Anfrage an Vave senden
-    const proxyHeaders = new Headers(request.headers);
-    proxyHeaders.set("Host", "vave.com");
-    proxyHeaders.set("Origin", "https://vave.com");
-    proxyHeaders.set("Referer", "https://vave.com/");
-
-    const fetchOptions = {
-      method: request.method,
-      headers: proxyHeaders,
-      redirect: "follow"
-    };
-
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      fetchOptions.body = request.body;
-    }
-
-    let response;
-    try {
-      response = await fetch(targetUrl, fetchOptions);
-    } catch (err) {
-      if (request.headers.get("accept")?.includes("application/json")) {
-        return new Response(JSON.stringify({ error: "Proxy connection failed" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
+      } catch (e) {
+        console.error("Tracker Fetch Fehler:", e);
       }
-      return new Response("Proxy Error", { status: 500 });
     }
+
+    if (trackerId && !url.searchParams.has("trackerId")) {
+      url.searchParams.set("trackerId", trackerId);
+      if (affiliateId) url.searchParams.set("affiliateId", affiliateId);
+      return Response.redirect(url.toString(), 302);
+    }
+
+    const fetchUrl = new URL(url.pathname + url.search, targetBase);
+    const proxyHeaders = new Headers(request.headers);
+    proxyHeaders.set("Host", "www.21.com");
+    proxyHeaders.set("Referer", "https://www.21.com/");
+
+    const response = await fetch(fetchUrl, {
+      method: request.method,
+      headers: proxyHeaders
+    });
 
     const contentType = response.headers.get("content-type") || "";
 
-    // 4. HTML bearbeiten (Logo, Titel, Favicon, Texte)
     if (contentType.includes("text/html")) {
       let newResponse = new HTMLRewriter()
         .on("head", {
           element(el) {
             el.append(`
               <style>
-                img[src*="logo"], img[alt*="Vave"], svg[class*="logo"] {
+                img[src*="logo"], img[alt*="21.com"], img[aria-label*="21.com"] {
                   content: url("${newLogoUrl}") !important;
                 }
               </style>
               <script>
                 (function() {
+                  const affId = "${affiliateId || ''}";
+                  const trkId = "${trackerId || ''}";
                   const newTitle = "${customTabTitle}";
                   const newFavicon = "${customFaviconUrl}";
                   const replacements = ${JSON.stringify(textReplacements)};
 
+                  // Blockiert Reacts interne Versuche, den Titel zu überschreiben
                   if (newTitle) {
                     document.title = newTitle;
                     try {
                       Object.defineProperty(document, 'title', {
                         get: function() { return newTitle; },
-                        set: function() {}
+                        set: function() { /* Ignorieren */ }
                       });
                     } catch(e) {}
                   }
@@ -172,6 +146,7 @@ export default {
                     enforceFavicon();
                     replaceTextNodes(document.body);
 
+                    // Neuer Wächter speziell für den HTML-Kopf (Titel & Favicon)
                     const headObserver = new MutationObserver(() => {
                       if (newTitle) {
                         const titleTag = document.querySelector("title");
@@ -185,6 +160,7 @@ export default {
                       headObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
                     }
 
+                    // Wächter für die Texte auf der Seite
                     const bodyObserver = new MutationObserver((mutations) => {
                       mutations.forEach((mutation) => {
                         mutation.addedNodes.forEach((node) => replaceTextNodes(node));
@@ -192,6 +168,23 @@ export default {
                     });
                     if (document.body) {
                       bodyObserver.observe(document.body, { childList: true, subtree: true });
+                    }
+
+                    // Affiliate Parameter vererben
+                    if (affId && trkId) {
+                      document.addEventListener("click", function(e) {
+                        const a = e.target.closest("a");
+                        if (a && a.href && a.href.startsWith(window.location.origin)) {
+                          try {
+                            const linkUrl = new URL(a.href);
+                            if (!linkUrl.searchParams.has("trackerId")) {
+                              linkUrl.searchParams.set("trackerId", trkId);
+                              linkUrl.searchParams.set("affiliateId", affId);
+                              a.href = linkUrl.toString();
+                            }
+                          } catch(err) {}
+                        }
+                      }, true);
                     }
                   });
                 })();
@@ -201,31 +194,21 @@ export default {
         })
         .transform(response);
 
-      const finalHeaders = new Headers(newResponse.headers);
-      finalHeaders.delete("Content-Security-Policy");
-      
-      for (const c of setCookiesToSave) {
-        finalHeaders.append("Set-Cookie", c);
+      const headers = new Headers(newResponse.headers);
+      if (trackerId) {
+        headers.append("Set-Cookie", `aff_trackerId=${trackerId}; Path=/; Max-Age=2592000; SameSite=Lax`);
+      }
+      if (affiliateId) {
+        headers.append("Set-Cookie", `aff_affiliateId=${affiliateId}; Path=/; Max-Age=2592000; SameSite=Lax`);
       }
 
       return new Response(newResponse.body, {
         status: newResponse.status,
         statusText: newResponse.statusText,
-        headers: finalHeaders
+        headers: headers
       });
     }
 
-    // Für API, Bilder, CSS, JS etc.
-    const finalHeaders = new Headers(response.headers);
-    finalHeaders.delete("Content-Security-Policy");
-    for (const c of setCookiesToSave) {
-      finalHeaders.append("Set-Cookie", c);
-    }
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: finalHeaders
-    });
+    return response;
   }
 };
