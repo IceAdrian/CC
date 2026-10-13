@@ -1,17 +1,17 @@
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const targetBase = "https://www.21.com";
+    const targetBase = "https://www.vave.com";
 
     // =========================================================================
     // 1. KONFIGURATION
     // =========================================================================
-    const affiliateTrackerUrl = "https://prod.trk21.com/click?offer=FF5GG2YAJ0P0&uid=CVuo3XCJ";
+    const affiliateTrackerUrl = "https://www.vave.com";
     
     const newLogoUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
     const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
 
-    const customTabTitle = "11bet - Bestes online Casino inkl. Sportwetten"; 
+    const customTabTitle = "Vave - Bestes online Casino inkl. Sportwetten"; 
 
     const textReplacements = {
       "21.com": "11bet",
