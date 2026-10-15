@@ -68,8 +68,8 @@ export default {
 
     const fetchUrl = new URL(url.pathname + url.search, targetBase);
     const proxyHeaders = new Headers(request.headers);
-    proxyHeaders.set("Host", "www.21.com");
-    proxyHeaders.set("Referer", "https://www.21.com/");
+    proxyHeaders.set("Host", "www.beefcasino.com");
+    proxyHeaders.set("Referer", "https://www.beefcasino.com/");
 
     const response = await fetch(fetchUrl, {
       method: request.method,
