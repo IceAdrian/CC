@@ -1,17 +1,17 @@
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const targetBase = "https://www.vave.com";
+    const targetBase = "https://www.beefcasino.com";
 
     // =========================================================================
     // 1. KONFIGURATION
     // =========================================================================
-    const affiliateTrackerUrl = "https://www.vave.com";
+    const affiliateTrackerUrl = "https://www.beefcasino.com";
     
     const newLogoUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
     const customFaviconUrl = "https://cdn.phototourl.com/member/2026-10-09-e328e6ac-8adb-4699-97f1-35ca1f9f17ac.png"; 
 
-    const customTabTitle = "Vave - Bestes online Casino inkl. Sportwetten"; 
+    const customTabTitle = "Beef - Bestes online Casino inkl. Sportwetten"; 
 
     const textReplacements = {
       "21.com": "11bet",
@@ -24,7 +24,7 @@ export default {
     if (isStaticFile) {
       const fetchUrl = new URL(url.pathname + url.search, targetBase);
       return fetch(fetchUrl, {
-        headers: { "Host": "www.21.com", "User-Agent": request.headers.get("User-Agent") || "" }
+        headers: { "Host": "www.beefcasino.com", "User-Agent": request.headers.get("User-Agent") || "" }
       });
     }
 
